@@ -4,16 +4,33 @@
 #include "byte_stream.hh"
 
 #include <cstdint>
+#include <queue>
 #include <string>
-
+typedef std::pair<std::string, uint64_t> istring;
+// auto cmp = [](const istring a, const istring b) {
+//     if (a.second == b.second)
+//         return a.first.size() > b.first.size();
+//     return a.second < b.second;
+// };
 //! \brief A class that assembles a series of excerpts from a byte stream (possibly out of order,
 //! possibly overlapping) into an in-order byte stream.
 class StreamReassembler {
   private:
     // Your code here -- add private members as necessary.
-
+    struct cmp {
+        bool operator()(const istring &lhs, const istring &rhs) const {
+            if (lhs.second == rhs.second)
+                return lhs.first.size() < rhs.first.size();
+            return lhs.second > rhs.second;
+        }
+    };
     ByteStream _output;  //!< The reassembled in-order byte stream
     size_t _capacity;    //!< The maximum number of bytes
+    size_t _bytes_wait;
+    size_t _now;
+    size_t eof_index;
+    std::priority_queue<istring, std::vector<istring>, cmp> _stored;
+    void simplify_queue();
 
   public:
     //! \brief Construct a `StreamReassembler` that will store up to `capacity` bytes.
@@ -43,7 +60,7 @@ class StreamReassembler {
     //!
     //! \note If the byte at a particular index has been submitted twice, it
     //! should only be counted once for the purpose of this function.
-    size_t unassembled_bytes() const;
+    size_t unassembled_bytes();
 
     //! \brief Is the internal state empty (other than the output stream)?
     //! \returns `true` if no substrings are waiting to be assembled
