@@ -16,7 +16,10 @@
 class ByteStream {
   private:
     // Your code here -- add private members as necessary.
-
+    std::deque<char> ByteQueue;
+    size_t _capsize;
+    size_t _readsize, _writesize;
+    bool _closed{};
     bool _error{};  //!< Flag indicating that the stream suffered an error.
 
   public:
