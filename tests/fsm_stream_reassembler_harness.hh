@@ -93,8 +93,7 @@ struct UnassembledBytes : public ReassemblerExpectation {
     }
 
     void execute(StreamReassembler &reassembler) const {
-        // if (reassembler.unassembled_bytes() != _bytes) {
-        if (false) {
+        if (reassembler.unassembled_bytes() != _bytes) {
             std::ostringstream ss;
             ss << "The reassembler was expected to have `" << _bytes << "` bytes not assembled, but there were `"
                << reassembler.unassembled_bytes() << "`";

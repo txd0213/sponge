@@ -14,67 +14,76 @@ void DUMMY_CODE(Targs &&.../* unused */) {}
 
 using namespace std;
 
-StreamReassembler::StreamReassembler(const size_t capacity)
-    : _output(capacity), _capacity(capacity), _bytes_wait(0), _now(0), eof_index(-1), _stored() {}
+StreamReassembler::StreamReassembler(const size_t capcity)
+    : _output(capcity), _capacity(capcity), _bytes_wait(0), _now(0), _indeof(-1), _indlist(), _unassemble_strs() {}
 
-//! \details This function accepts a substring (aka a segment) of bytes,
-//! possibly out-of-order, from the logical stream, and assembles any newly
-//! contiguous substrings and writes them into the output stream in order.
 void StreamReassembler::push_substring(const string &data, const size_t index, const bool eof) {
-    size_t not_discard = std::min(data.size(), _capacity - _output.buffer_size() - _bytes_wait);
-    if (not_discard == 0) {
-        if (eof)
-            _output.end_input();
-        return;
-    }
-    istring tmp(data.substr(0, not_discard), index);
-    _stored.push(tmp);
-    _bytes_wait += not_discard;
+    size_t len = data.size();
+
     if (eof)
-        eof_index = index + data.size();
+        _indeof = index + len;
+    if (_indeof <= _now)
+        _output.end_input();
+    if (len == 0)
+        return;
+    if (len + _output.buffer_size() + _bytes_wait > _capacity)
+        return;
 
-    while (!_stored.empty()) {
-        istring x = _stored.top();
-        if (_now < x.second)
-            break;
-        _stored.pop();
-        size_t len = x.first.size();
-        if (_now >= x.second + len) {
-            _bytes_wait -= len;
-            continue;
+    std::queue<std::pair<size_t, size_t>> _newlist;
+    string _data = data;
+    size_t left = index, right = len + index - 1;
+    bool placed = false;
+
+    for (auto &p : _indlist) {
+        if (p.first > right) {
+            if (!placed) {
+                _newlist.push({left, right});
+                _unassemble_strs[{left, right}] = _data;
+                _bytes_wait += _data.size();
+                placed = true;
+            }
+            _newlist.push(p);
+        } else if (p.second < left)
+            _newlist.push(p);
+        else {
+            string x = _unassemble_strs[p];
+            _unassemble_strs.erase(p);
+            _bytes_wait -= x.size();
+            if (left > p.first) {
+                _data = x.substr(0, left - p.first) + _data;
+                left = p.first;
+            }
+            if (right < p.second) {
+                size_t y = p.second - right;
+                _data = _data + x.substr(x.size() - y, y);
+                right = p.second;
+            }
         }
-        size_t y = len - (_now - x.second);
-        _output.write(x.first.substr(_now - x.second, y));
-        _now += y;
-        _bytes_wait -= len;
+    }
+    if (!placed) {
+        _newlist.push({left, right});
+        _unassemble_strs[{left, right}] = _data;
+        _bytes_wait += _data.size();
     }
 
-    if (eof_index <= _now)
+    _indlist.clear();
+    while (!_newlist.empty()) {
+        std::pair<size_t, size_t> p = _newlist.front();
+        _newlist.pop();
+        if (_now >= p.first && _now <= p.second) {
+            size_t wsize = p.second - _now + 1;
+            string meg = _unassemble_strs[{p.first, p.second}];
+            _unassemble_strs.erase({p.first, p.second});
+            _output.write(meg.substr(meg.size() - wsize, wsize));
+            _now += wsize;
+            _bytes_wait -= wsize;
+        } else
+            _indlist.push_back(p);
+    }
+    if (_indeof <= _now)
         _output.end_input();
 }
 
-void StreamReassembler::simplify_queue() {
-    std::priority_queue<istring, std::vector<istring>, cmp> t;
-    istring x("", 0), y("", 0);
-    if (!_stored.empty()) {
-        x = _stored.top();
-        _stored.pop();
-        t.push(x);
-    }
-    while (!_stored.empty()) {
-        y = _stored.top();
-        _stored.pop();
-        if (y.second != x.second)
-            t.push(y);
-        else
-            _bytes_wait -= y.first.size();
-        x = y;
-    }
-    _stored = t;
-}
-size_t StreamReassembler::unassembled_bytes() {
-    simplify_queue();
-    return _bytes_wait;
-}
+size_t StreamReassembler::unassembled_bytes() { return _bytes_wait; }
 
 bool StreamReassembler::empty() const { return _bytes_wait == 0; }
