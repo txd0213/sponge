@@ -26,8 +26,6 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
         _output.end_input();
     if (len == 0)
         return;
-    if (len + _output.buffer_size() + _bytes_wait > _capacity)
-        return;
 
     std::queue<std::pair<size_t, size_t>> _newlist;
     string _data = data;
@@ -65,25 +63,42 @@ void StreamReassembler::push_substring(const string &data, const size_t index, c
         _unassemble_strs[{left, right}] = _data;
         _bytes_wait += _data.size();
     }
-
     _indlist.clear();
-    while (!_newlist.empty()) {
+
+    size_t new_bytes_wait = 0;
+    bool out_of_memory = false;
+    while (!_newlist.empty() && !out_of_memory) {
         std::pair<size_t, size_t> p = _newlist.front();
         _newlist.pop();
+        size_t left_capacity = _capacity - _output.buffer_size() - new_bytes_wait;
         if (_now >= p.first && _now <= p.second) {
             size_t wsize = p.second - _now + 1;
+            if (wsize > left_capacity) {
+                wsize = left_capacity;
+                out_of_memory = true;
+            }
             string meg = _unassemble_strs[{p.first, p.second}];
             _unassemble_strs.erase({p.first, p.second});
-            _output.write(meg.substr(meg.size() - wsize, wsize));
+            _output.write(meg.substr(_now - p.first, wsize));
             _now += wsize;
-            _bytes_wait -= wsize;
-        } else
-            _indlist.push_back(p);
+        } else {
+            size_t psize = p.second - p.first + 1;
+            if (psize > left_capacity) {
+                psize = left_capacity;
+                out_of_memory = true;
+                string meg = _unassemble_strs[{p.first, p.second}];
+                _unassemble_strs.erase({p.first, p.second});
+                _unassemble_strs[{p.first, p.first + psize - 1}] = meg.substr(0, psize);
+            }
+            _indlist.push_back({p.first, p.first + psize - 1});
+            new_bytes_wait += psize;
+        }
     }
     if (_indeof <= _now)
         _output.end_input();
+    _bytes_wait = new_bytes_wait;
 }
 
-size_t StreamReassembler::unassembled_bytes() { return _bytes_wait; }
+size_t StreamReassembler::unassembled_bytes() const { return _bytes_wait; }
 
 bool StreamReassembler::empty() const { return _bytes_wait == 0; }
