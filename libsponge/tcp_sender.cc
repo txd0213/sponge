@@ -2,6 +2,7 @@
 #include "tcp_config.hh"
 
 #include <random>
+#include <iostream>
 
 // Dummy implementation of a TCP sender
 
@@ -32,9 +33,10 @@ void TCPSender::fill_window() {
             _ifsetSYN = true;
             seg.header().syn = true;
             winsize--;
+            // std::cout<< "!" << std::endl;
         }
 
-        size_t payload = std::min(_stream.buffer_size(), TCPConfig::MAX_PAYLOAD_SIZE, winsize);
+        size_t payload = std::min(_stream.buffer_size(), std::min(TCPConfig::MAX_PAYLOAD_SIZE, winsize));
         seg.payload() = Buffer(_stream.read(payload));
         seg.header().seqno = next_seqno();
         winsize -= payload;
@@ -46,7 +48,7 @@ void TCPSender::fill_window() {
             break;
         if (_segments_out.empty()) {
             _RTO = _initial_retransmission_timeout;
-            _con_retrans = 0;
+            _timeout = 0;
         }
         _segments_out.push(seg);
 
@@ -64,8 +66,12 @@ void TCPSender::fill_window() {
 //! \returns `false` if the ackno appears invalid (acknowledges something the TCPSender hasn't sent yet)
 bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_size) {
     uint64_t nseq = unwrap(ackno, _isn, _next_seqno);
-    if (nseq > _next_seqno)
+    bool flag = true;
+    if(!_ifsetSYN)
         return false;
+    if (nseq > _next_seqno)
+        flag = false;
+    
     _winsize = window_size;
 
     for (auto p = _m.begin(); p != _m.end();) {
@@ -82,7 +88,7 @@ bool TCPSender::ack_received(const WrappingInt32 ackno, const uint16_t window_si
 
     _con_retrans = 0;
     fill_window();
-    return true;
+    return flag;
 }
 
 //! \param[in] ms_since_last_tick the number of milliseconds since the last call to this method
@@ -92,6 +98,7 @@ void TCPSender::tick(const size_t ms_since_last_tick) {
     if (p != _m.end() && _timeout >= _RTO) {
         if (_winsize > 0)
             _RTO <<= 1;
+        std::cout << "timeeout:" << _timeout << std::endl;
         _timeout = 0;
         _segments_out.push(p->second);
         _con_retrans++;
@@ -103,5 +110,6 @@ unsigned int TCPSender::consecutive_retransmissions() const { return _con_retran
 void TCPSender::send_empty_segment() {
     TCPSegment seg;
     seg.header().seqno = next_seqno();
+    seg.header().syn = false;
     _segments_out.push(seg);
 }

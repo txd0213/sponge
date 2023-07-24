@@ -39,7 +39,7 @@ class TCPSender {
     size_t _timeout{0};
     size_t _RTO{0};
     size_t _con_retrans{0};
-    std::unordered_map<uint64_t, TCPSegment> _m{};
+    std::map<uint64_t, TCPSegment> _m{};
 
   public:
     //! Initialize a TCPSender
@@ -96,6 +96,8 @@ class TCPSender {
     //! \brief relative seqno for the next byte to be sent
     WrappingInt32 next_seqno() const { return wrap(_next_seqno, _isn); }
     //!@}
+
+    bool setSYN() const { return _ifsetSYN; }
 };
 
 #endif  // SPONGE_LIBSPONGE_TCP_SENDER_HH
